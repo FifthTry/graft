@@ -117,8 +117,8 @@ fn merge_or_copy(file_path: &str) -> Result<bool, Box<dyn Error>> {
         }
         Err(e) => {
             if e.kind() == std::io::ErrorKind::NotFound {
-                write_file_content(nf_content, file_path.as_str());
-                write_file_content(nf_content, pf_path);
+                write_file_content(nf_content.clone(), file_path.as_str());
+                write_file_content(nf_content, pf_path.as_str());
                 Ok(true)
             } else {
                 return Err(Box::new(e));
@@ -147,7 +147,7 @@ fn process_folder(path: &str) -> Result<bool, Box<dyn Error>> {
 
 fn resolve() -> Result<(), Box<dyn Error>> {
     std::fs::remove_file(format!("{}/{}/{}", PARENT_FOLDER, TMP_FOLDER, LOCK_FILE).as_str());
-    process_folder(format!("{}/{}", PARENT_FOLDER, TMP_FOLDER).as_str(), true).map(|_| ())
+    process_folder(format!("{}/{}", PARENT_FOLDER, TMP_FOLDER).as_str()).map(|_| ())
 }
 
 fn add(url_link: &str) -> Result<(), Box<dyn Error>> {
@@ -184,8 +184,8 @@ fn cleanup() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn update() -> Result<&str, Box<dyn Error>> {
-    let message = "";
+fn update() -> Result<String, Box<dyn Error>> {
+    let mut message = "";
     match read_config(format!("{}/{}", PARENT_FOLDER, CONFIG_FILE).as_str()) {
         Ok(conf) => {
             for c in conf.repos_to_fetch.iter() {
@@ -199,7 +199,7 @@ fn update() -> Result<&str, Box<dyn Error>> {
                     }
                 }
             }
-            match process_folder(format!("{}/{}", PARENT_FOLDER, TMP_FOLDER).as_str(), false) {
+            match process_folder(format!("{}/{}", PARENT_FOLDER, TMP_FOLDER).as_str()) {
                 Ok(true) => {
                     resolve();
                     message = "grafting completed";
@@ -220,7 +220,7 @@ fn update() -> Result<&str, Box<dyn Error>> {
             return Err(e);
         }
     }
-    Ok(message)
+    Ok(message.to_string())
 }
 
 fn main() {
