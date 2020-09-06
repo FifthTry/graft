@@ -151,6 +151,10 @@ fn resolve() -> Result<(), Box<dyn Error>> {
 }
 
 fn add(url_link: &str) -> Result<(), Box<dyn Error>> {
+    if std::path::Path::new(format!("{}/{}/{}", PARENT_FOLDER, TMP_FOLDER, LOCK_FILE).as_str())
+        .exists() {
+        return Err("ERROR: already in conflict state".into());
+    }
     let conf_path = format!("{}/{}", PARENT_FOLDER, CONFIG_FILE);
     let mut conf = if !std::path::Path::new(conf_path.as_str()).exists() {
         Config {
@@ -185,6 +189,10 @@ fn cleanup() -> Result<(), Box<dyn Error>> {
 }
 
 fn update() -> Result<String, Box<dyn Error>> {
+    if std::path::Path::new(format!("{}/{}/{}", PARENT_FOLDER, TMP_FOLDER, LOCK_FILE).as_str())
+        .exists() {
+        return Err("ERROR: already in conflict state".into());
+    }
     let mut message = "";
     match read_config(format!("{}/{}", PARENT_FOLDER, CONFIG_FILE).as_str()) {
         Ok(conf) => {
