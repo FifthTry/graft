@@ -1,23 +1,31 @@
 let
-  # Mozilla Overlay
+  system = import <nixpkgs> {};
   moz_overlay = import (
-    builtins.fetchTarball
-      "https://github.com/mozilla/nixpkgs-mozilla/archive/master.tar.gz"
-  );
-  # Update nixpkgs from release: https://github.com/NixOS/nixpkgs/releases/tag/20.03
-  nixpkgs = import (builtins.fetchTarball https://github.com/NixOS/nixpkgs/archive/20.03.tar.gz) {
-    overlays = [ moz_overlay ];
-    config = {};
-  };
-
-  frameworks = nixpkgs.darwin.apple_sdk.frameworks;
-  rustChannels = (
-    nixpkgs.rustChannelOf {
-      date = "2020-05-07";
-      channel = "stable";
+    builtins.fetchTarball {
+      url = https://s3.ap-south-1.amazonaws.com/downloads.fifthtry.com/nixpkgs-mozilla-efda5b357451dbb0431f983cca679ae3cd9b9829.tar.gz;
+      sha256 = "11wqrg86g3qva67vnk81ynvqyfj0zxk83cbrf0p9hsvxiwxs8469";
     }
   );
-
+  nixpkgs = import (
+    builtins.fetchTarball {
+      url = https://s3.ap-south-1.amazonaws.com/downloads.fifthtry.com/nixpkgs-20.03.tar.gz;
+      sha256 = "0yn3yvzy69nlx72rz2hi05jpjlsf9pjzdbdy4rgfpa0r0b494sfb";
+    }
+  ) {
+    overlays = [ moz_overlay ];
+    config = { allowUnfree = true; };
+  };
+  frameworks = nixpkgs.darwin.apple_sdk.frameworks;
+  rust = (
+    nixpkgs.rustChannelOf {
+      rustToolchain = ./rust-toolchain;
+    }
+  ).rust.override {
+    extensions = [
+      "clippy-preview"
+      "rust-src"
+    ];
+  };
 in
   with nixpkgs;
 

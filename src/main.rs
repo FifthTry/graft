@@ -49,8 +49,7 @@ fn write_file_content(content: String, file_path: &str) -> Result<(), Box<dyn Er
 fn extract_files(path: &str) -> Result<(), Box<dyn Error>> {
     let file = std::fs::File::open(path).unwrap();
     let mut ar = tar::Archive::new(flate2::read::GzDecoder::new(file));
-    ar.unpack(format!("{}/{}", PARENT_FOLDER, TMP_FOLDER).as_str())
-        .unwrap();
+    ar.unpack(format!("{}/{}", PARENT_FOLDER, TMP_FOLDER).as_str())?;
     Ok(())
 }
 
