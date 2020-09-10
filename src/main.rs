@@ -1,4 +1,4 @@
-use clap::{App, Arg, SubCommand};
+use clap::{App, SubCommand};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::io::prelude::*;
@@ -36,7 +36,7 @@ fn read_config<P: AsRef<std::path::Path>>(path: P) -> Result<Config, Box<dyn Err
 fn write_file_content(content: String, file_path: &str) -> Result<(), Box<dyn Error>> {
     match std::path::Path::new(file_path).parent() {
         Some(p) => {
-            std::fs::create_dir_all(p);
+            std::fs::create_dir_all(p)?;
         }
         None => {}
     }
@@ -119,11 +119,11 @@ fn merge_or_copy(file_path: &str) -> Result<bool, Box<dyn Error>> {
                 cf_content.as_str(),
             ) {
                 Ok(merged_content) => {
-                    write_file_content(merged_content, file_path.as_str());
+                    write_file_content(merged_content, file_path.as_str())?;
                     Ok(true)
                 }
                 Err(conflict_content) => {
-                    write_file_content(conflict_content, file_path.as_str());
+                    write_file_content(conflict_content, file_path.as_str())?;
                     println!("WARNING: conflict in file: {:?}", file_path.as_str());
                     Ok(false)
                 }
@@ -131,8 +131,8 @@ fn merge_or_copy(file_path: &str) -> Result<bool, Box<dyn Error>> {
         }
         Err(e) => {
             if e.kind() == std::io::ErrorKind::NotFound {
-                write_file_content(nf_content.clone(), file_path.as_str());
-                write_file_content(nf_content, pf_path.as_str());
+                write_file_content(nf_content.clone(), file_path.as_str())?;
+                write_file_content(nf_content, pf_path.as_str())?;
                 Ok(true)
             } else {
                 return Err(Box::new(e));
@@ -166,7 +166,7 @@ fn is_conflict_state() -> bool {
 
 fn cleanup() -> Result<(), Box<dyn Error>> {
     if !is_conflict_state() {
-        std::fs::remove_dir_all(format!("{}/{}", PARENT_FOLDER, TMP_FOLDER).as_str());
+        std::fs::remove_dir_all(format!("{}/{}", PARENT_FOLDER, TMP_FOLDER).as_str())?;
     }
     Ok(())
 }
@@ -176,7 +176,7 @@ fn update() -> Result<String, Box<dyn Error>> {
         return Err("ERROR: already in conflict state".into());
     }
 
-    let mut message = "";
+    let message: &str;
     match read_config(format!("{}", CONFIG_FILE).as_str()) {
         Ok(conf) => {
             for c in conf.iter() {
@@ -186,11 +186,11 @@ fn update() -> Result<String, Box<dyn Error>> {
                 }
                 // to rename or not
                 // std::fs::rename(filename.as_str(), c.filename.as_str())?;
-                extract_files(filename.as_str());
+                extract_files(filename.as_str())?;
             }
             match process_folder(format!("{}/{}", PARENT_FOLDER, TMP_FOLDER).as_str()) {
                 Ok(true) => {
-                    resolve();
+                    resolve()?;
                     message = "grafting completed";
                 }
                 Ok(false) => {
@@ -213,7 +213,7 @@ fn update() -> Result<String, Box<dyn Error>> {
 }
 
 fn resolve() -> Result<(), Box<dyn Error>> {
-    std::fs::remove_file(format!("{}/{}/{}", PARENT_FOLDER, TMP_FOLDER, LOCK_FILE).as_str());
+    std::fs::remove_file(format!("{}/{}/{}", PARENT_FOLDER, TMP_FOLDER, LOCK_FILE).as_str())?;
     process_folder(format!("{}/{}", PARENT_FOLDER, TMP_FOLDER).as_str()).map(|_| ())
 }
 
@@ -247,5 +247,10 @@ fn main() {
         }
     }
 
-    cleanup();
+    match cleanup() {
+        Ok(_) => (),
+        Err(e) => {
+            println!("ERROR: {:?}", e);
+        }
+    };
 }
