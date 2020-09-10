@@ -1,27 +1,36 @@
 use clap::{App, Arg, SubCommand};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
+use std::io::prelude::*;
+use url::Url;
 
 static PARENT_FOLDER: &str = ".graft.lock";
 static TMP_FOLDER: &str = "tmp";
-static CONFIG_FILE: &str = "graft.txt";
+static CONFIG_FILE: &str = "graft.conf";
 static LOCK_FILE: &str = "conflict.lock";
 
 #[derive(Serialize, Deserialize, Debug)]
-struct Repo {
+struct RepoConfig {
+    filename: String,
     upstream_path: String,
 }
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Config {
-    repos_to_fetch: Vec<Repo>,
-}
+type Config = Vec<RepoConfig>;
 
 fn read_config<P: AsRef<std::path::Path>>(path: P) -> Result<Config, Box<dyn Error>> {
     let file = std::fs::File::open(path)?;
     let reader = std::io::BufReader::new(file);
-    let config = serde_json::from_reader(reader)?;
-    Ok(config)
+    let mut repo_configs: Config = vec![];
+    // TODO: handle unwraps
+    for line in reader.lines() {
+        let str_cfg = line.unwrap();
+        let mut split_str: Vec<&str> = str_cfg.split(": ").collect();
+        let r = RepoConfig {
+            upstream_path: split_str.pop().unwrap().to_string(),
+            filename: split_str.pop().unwrap().to_string(),
+        };
+        repo_configs.push(r);
+    }
+    Ok(repo_configs)
 }
 
 fn write_file_content(content: String, file_path: &str) -> Result<(), Box<dyn Error>> {
@@ -45,15 +54,20 @@ fn extract_files(path: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn download_file(url: &str) -> Result<String, Box<dyn Error>> {
-    let response = reqwest::blocking::get(url)?;
-    let fname = response
-        .url()
+fn get_filename_from_url(url: &str) -> Result<String, Box<dyn Error>> {
+    let url_obj = Url::parse(url)?;
+    let fname = url_obj
         .path_segments()
         .and_then(|segments| segments.last())
         .and_then(|name| if name.is_empty() { None } else { Some(name) })
         .unwrap_or("tmp.bin")
         .to_owned();
+    Ok(fname)
+}
+
+fn download_file(url: &str) -> Result<String, Box<dyn Error>> {
+    let response = reqwest::blocking::get(url)?;
+    let fname = get_filename_from_url(url)?;
     let mut dest = std::fs::File::create(&fname)?;
     let content = response
         .bytes()
@@ -145,67 +159,34 @@ fn process_folder(path: &str) -> Result<bool, Box<dyn Error>> {
     Ok(is_resolved_state)
 }
 
-fn resolve() -> Result<(), Box<dyn Error>> {
-    std::fs::remove_file(format!("{}/{}/{}", PARENT_FOLDER, TMP_FOLDER, LOCK_FILE).as_str());
-    process_folder(format!("{}/{}", PARENT_FOLDER, TMP_FOLDER).as_str()).map(|_| ())
-}
-
-fn add(url_link: &str) -> Result<(), Box<dyn Error>> {
-    if std::path::Path::new(format!("{}/{}/{}", PARENT_FOLDER, TMP_FOLDER, LOCK_FILE).as_str())
-        .exists() {
-        return Err("ERROR: already in conflict state".into());
-    }
-    let conf_path = format!("{}/{}", PARENT_FOLDER, CONFIG_FILE);
-    let mut conf = if !std::path::Path::new(conf_path.as_str()).exists() {
-        Config {
-            repos_to_fetch: vec![],
-        }
-    } else {
-        match read_config(conf_path.as_str()) {
-            Ok(conf) => conf,
-            Err(e) => {
-                println!("error: {:?}", e);
-                return Err(e);
-            }
-        }
-    };
-
-    let r = Repo {
-        upstream_path: url_link.to_string(),
-    };
-    conf.repos_to_fetch.push(r);
-    let s = serde_json::to_string(&conf)?;
-    write_file_content(s, conf_path.as_str());
-    Ok(())
+fn is_conflict_state() -> bool {
+    std::path::Path::new(format!("{}/{}/{}", PARENT_FOLDER, TMP_FOLDER, LOCK_FILE).as_str())
+        .exists()
 }
 
 fn cleanup() -> Result<(), Box<dyn Error>> {
-    if !std::path::Path::new(format!("{}/{}/{}", PARENT_FOLDER, TMP_FOLDER, LOCK_FILE).as_str())
-        .exists()
-    {
+    if !is_conflict_state() {
         std::fs::remove_dir_all(format!("{}/{}", PARENT_FOLDER, TMP_FOLDER).as_str());
     }
     Ok(())
 }
 
 fn update() -> Result<String, Box<dyn Error>> {
-    if std::path::Path::new(format!("{}/{}/{}", PARENT_FOLDER, TMP_FOLDER, LOCK_FILE).as_str())
-        .exists() {
+    if is_conflict_state() {
         return Err("ERROR: already in conflict state".into());
     }
+
     let mut message = "";
-    match read_config(format!("{}/{}", PARENT_FOLDER, CONFIG_FILE).as_str()) {
+    match read_config(format!("{}", CONFIG_FILE).as_str()) {
         Ok(conf) => {
-            for c in conf.repos_to_fetch.iter() {
-                match download_file(c.upstream_path.as_str()) {
-                    Ok(file_name) => {
-                        extract_files(file_name.as_str());
-                        std::fs::remove_file(file_name.as_str())?;
-                    }
-                    Err(e) => {
-                        return Err(e);
-                    }
+            for c in conf.iter() {
+                let filename = get_filename_from_url(c.upstream_path.as_str())?;
+                if !std::path::Path::new(filename.as_str()).exists() {
+                    download_file(c.upstream_path.as_str())?;
                 }
+                // to rename or not
+                // std::fs::rename(filename.as_str(), c.filename.as_str())?;
+                extract_files(filename.as_str());
             }
             match process_folder(format!("{}/{}", PARENT_FOLDER, TMP_FOLDER).as_str()) {
                 Ok(true) => {
@@ -231,6 +212,11 @@ fn update() -> Result<String, Box<dyn Error>> {
     Ok(message.to_string())
 }
 
+fn resolve() -> Result<(), Box<dyn Error>> {
+    std::fs::remove_file(format!("{}/{}/{}", PARENT_FOLDER, TMP_FOLDER, LOCK_FILE).as_str());
+    process_folder(format!("{}/{}", PARENT_FOLDER, TMP_FOLDER).as_str()).map(|_| ())
+}
+
 fn main() {
     // TODO: add verbosity -V
 
@@ -238,53 +224,23 @@ fn main() {
         .version("0.1")
         .about("sync your common files across projects")
         .subcommand(
-            SubCommand::with_name("add")
-                .about("add new upstream remote repository")
-                .version("0.1")
-                .arg(
-                    Arg::with_name("input")
-                        .short("i")
-                        .takes_value(true)
-                        .index(1),
-                ),
-        )
-        .subcommand(
-            SubCommand::with_name("update")
-                .about("update local files")
-                .version("0.1"),
-        )
-        .subcommand(
             SubCommand::with_name("resolve")
-                .about("run to resolve graft state, copies files to parent folder")
-                .version("0.1"),
+                .about("run to resolve graft state, copies files to parent folder"),
         )
         .get_matches();
 
-    if let Some(matches) = matches.subcommand_matches("add") {
-        let in_url = matches.value_of("input").unwrap();
-        add(in_url);
-        match update() {
-            Ok(msg) => {
-                println!("{}", msg);
-            }
-            Err(e) => {
-                println!("ERROR: {:?}", e);
-            }
-        }
-    }
-    if let Some(_matches) = matches.subcommand_matches("update") {
-        match update() {
-            Ok(msg) => {
-                println!("{}", msg);
-            }
-            Err(e) => {
-                println!("ERROR: {:?}", e);
-            }
-        }
-    }
     if let Some(_matches) = matches.subcommand_matches("resolve") {
         match resolve() {
             Ok(_) => (),
+            Err(e) => {
+                println!("ERROR: {:?}", e);
+            }
+        }
+    } else {
+        match update() {
+            Ok(msg) => {
+                println!("{}", msg);
+            }
             Err(e) => {
                 println!("ERROR: {:?}", e);
             }
