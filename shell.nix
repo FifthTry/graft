@@ -31,7 +31,7 @@ in
 
   stdenv.mkDerivation {
     name = "graft-env";
-    buildInputs = [ rustChannels.rust rustChannels.rust-src rustChannels.clippy-preview ];
+    buildInputs = [ rust ];
 
     nativeBuildInputs = [
       file
@@ -74,7 +74,7 @@ in
 
     # Post Shell Hook
     shellHook = ''
-      echo "Using ${python37.name}, ${rustChannels.rust.name}"
+      echo "Using ${python37.name}, ${rust.name}"
       echo "ENV: graft-env activated";
     '';
   }

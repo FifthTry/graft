@@ -1,4 +1,4 @@
-use clap::{App, SubCommand};
+use clap::{App, Arg, SubCommand};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::io::prelude::*;
@@ -170,7 +170,7 @@ fn cleanup() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn update() -> Result<String, Box<dyn Error>> {
+fn update(skip_download: bool) -> Result<String, Box<dyn Error>> {
     if is_conflict_state() {
         return Err("ERROR: already in conflict state".into());
     }
@@ -179,13 +179,22 @@ fn update() -> Result<String, Box<dyn Error>> {
     match read_config(format!("{}", CONFIG_FILE).as_str()) {
         Ok(conf) => {
             for c in conf.iter() {
-                let filename = get_filename_from_url(c.upstream_path.as_str())?;
-                if !std::path::Path::new(filename.as_str()).exists() {
-                    download_file(c.upstream_path.as_str())?;
+                if skip_download {
+                    let options = fs_extra::dir::CopyOptions::new();
+                    fs_extra::dir::copy(
+                        c.filename.as_str(),
+                        format!("{}/{}", PARENT_FOLDER, TMP_FOLDER).as_str(),
+                        &options,
+                    )?;
+                } else {
+                    let filename = get_filename_from_url(c.upstream_path.as_str())?;
+                    if !std::path::Path::new(filename.as_str()).exists() {
+                        download_file(c.upstream_path.as_str())?;
+                    }
+                    // to rename or not
+                    // std::fs::rename(filename.as_str(), c.filename.as_str())?;
+                    extract_files(filename.as_str())?;
                 }
-                // to rename or not
-                // std::fs::rename(filename.as_str(), c.filename.as_str())?;
-                extract_files(filename.as_str())?;
             }
             match process_folder(format!("{}/{}", PARENT_FOLDER, TMP_FOLDER).as_str()) {
                 Ok(true) => {
@@ -222,6 +231,11 @@ fn main() {
     let matches = App::new("graft")
         .version("0.1")
         .about("sync your common files across projects")
+        .arg(
+            Arg::with_name("skip-download")
+                .short("s")
+                .help("Skip file download"),
+        )
         .subcommand(
             SubCommand::with_name("resolve")
                 .about("run to resolve graft state, copies files to parent folder"),
@@ -236,7 +250,7 @@ fn main() {
             }
         }
     } else {
-        match update() {
+        match update(matches.is_present("skip-download")) {
             Ok(msg) => {
                 println!("{}", msg);
             }
